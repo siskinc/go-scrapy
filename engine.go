@@ -5,11 +5,21 @@ import (
 	"net/http"
 )
 
+type EngineConfig struct {
+	DownloaderConfig *DownloaderConfig
+}
+
 type Engine struct {
 	downloader *Downloader
 	scheduler  Scheduler
 	spider     Spider
 	pipelines  []ItemPipeline
+}
+
+func NewEngine(config *EngineConfig) *Engine {
+	engine := &Engine{}
+	engine.downloader = NewDownloader(config.DownloaderConfig)
+	return engine
 }
 
 func (e *Engine) AddRequest(r *http.Request) {
@@ -31,6 +41,12 @@ func (e *Engine) AddItem(item interface{}) {
 
 func (e *Engine) RegisterSpider(spider Spider) {
 	e.spider = spider
+}
+
+func (e *Engine) RegisterPipeline(pipelines ...ItemPipeline) {
+	for i := range pipelines {
+		e.pipelines = append(e.pipelines, pipelines[i])
+	}
 }
 
 func (e *Engine) Start() {
