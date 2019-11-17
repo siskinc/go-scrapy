@@ -8,22 +8,22 @@ import (
 )
 
 type DownloadMiddleWare interface {
-	ProcessRequest(*http.Request) (*http.Request, *http.Response, error)
-	ProcessResponse(*http.Response) (*http.Request, *http.Response, error)
+	ProcessRequest(*Request) (*Request, *Response, error)
+	ProcessResponse(*Response) (*Request, *Response, error)
 }
 
 type DownloaderConfig struct {
 	RetryMax       int
 	RetrySleep     time.Duration
 	WorkerNumber   int
-	RequestNumber  uint64
-	ResponseNumber uint64
+	RequestNumber  int
+	ResponseNumber int
 }
 
 type Downloader struct {
 	client       *http.Client
-	requests     chan *http.Request
-	responses    chan *http.Response
+	requests     chan *Request
+	responses    chan *Response
 	runWorkLimit chan struct{}
 	retry        int
 	retrySleep   time.Duration
@@ -44,13 +44,13 @@ func NewDownloader(config *DownloaderConfig) *Downloader {
 		config.WorkerNumber = 1
 	}
 	if config.RequestNumber == 0 {
-		config.RequestNumber = uint64(config.WorkerNumber)
+		config.RequestNumber = config.WorkerNumber
 	}
 	if config.ResponseNumber == 0 {
-		config.ResponseNumber = uint64(config.WorkerNumber)
+		config.ResponseNumber = config.WorkerNumber
 	}
-	downloader.requests = make(chan *http.Request, config.RequestNumber)
-	downloader.responses = make(chan *http.Response, config.ResponseNumber)
+	downloader.requests = make(chan *Request, config.RequestNumber)
+	downloader.responses = make(chan *Response, config.ResponseNumber)
 	downloader.runWorkLimit = make(chan struct{}, config.WorkerNumber)
 	downloader.client = http.DefaultClient
 	return downloader
@@ -64,7 +64,7 @@ func (d *Downloader) SetClient(client *http.Client) {
 	d.client = client
 }
 
-func (d *Downloader) GetResponse() *http.Response {
+func (d *Downloader) GetResponse() *Response {
 	return <-d.responses
 }
 
@@ -74,16 +74,16 @@ func (d *Downloader) run() {
 		beginTime := time.Now().Unix()
 		go d.download(req)
 		endTime := time.Now().Unix()
-		logrus.Debugf("Download %s %s is successful, time cost: %d", req.Method, req.URL,
+		logrus.Debugf("Download %s %s is successful, time cost: %d", req.HttpRequest.Method, req.HttpRequest.URL,
 			endTime-beginTime)
 	}
 }
 
-func (d *Downloader) AddRequest(req *http.Request) {
+func (d *Downloader) AddRequest(req *Request) {
 	d.requests <- req
 }
 
-func (d *Downloader) HandleMiddleWare(req *http.Request, resp *http.Response) (skip bool) {
+func (d *Downloader) HandleMiddleWare(req *Request, resp *Response) (skip bool) {
 	skip = false
 	if req != nil {
 		d.AddRequest(req)
@@ -96,20 +96,20 @@ func (d *Downloader) HandleMiddleWare(req *http.Request, resp *http.Response) (s
 	return
 }
 
-func (d *Downloader) download(req *http.Request) {
+func (d *Downloader) download(req *Request) {
 	retry := 0
 	defer func() {
 		<-d.runWorkLimit
 	}()
-	var request *http.Request
-	var response *http.Response
+	var request *Request
+	var response *Response
 	var err error
 	for _, middleWare := range d.middleWares {
 		request, response, err = middleWare.ProcessRequest(req)
 		if err != nil {
 			if !errors.Is(err, IgnoreRequest) {
 				logrus.Errorf("%s %s in download middleware(%+v) is err: %v.",
-					req.Method, middleWare, req.URL, err)
+					req.HttpRequest.Method, middleWare, req.HttpRequest.URL, err)
 			}
 			return
 		}
@@ -118,30 +118,34 @@ func (d *Downloader) download(req *http.Request) {
 			return
 		}
 	}
-	var resp *http.Response
+	resp := &Response{}
+	resp.Config = req.Config
 	for retry <= d.retry {
 		if retry > 1 {
-			logrus.Debugf("%s %s retry count: %d.", req.Method, req.URL, retry)
+			logrus.Debugf("%s %s retry count: %d.", req.HttpRequest.Method, req.HttpRequest.URL, retry)
 		}
-		resp, err = d.client.Do(req)
+		resp.HttpResponse, err = d.client.Do(req.HttpRequest)
 		if err != nil {
-			logrus.Errorf("%s %s is err: %v.", req.Method, req.URL, err)
+			logrus.Errorf("%s %s is err: %v.", req.HttpRequest.Method, req.HttpRequest.URL, err)
 		}
-		if resp.StatusCode >= 400 {
-			logrus.Errorf("%s %s is failed, status code is: %d.", req.Method, req.URL, resp.StatusCode)
+		if resp.HttpResponse.StatusCode >= 400 {
+			logrus.Errorf("%s %s is failed, status code is: %d.", req.HttpRequest.Method, req.HttpRequest.URL,
+				resp.HttpResponse.StatusCode)
 		} else {
 			break
 		}
 		retry++
 		if d.retrySleep > 0 {
-			logrus.Infof("%s %s retry count: %d, sleep: %v.", req.Method, req.URL, retry, d.retrySleep)
+			logrus.Infof("%s %s retry count: %d, sleep: %v.", req.HttpRequest.Method, req.HttpRequest.URL,
+				retry, d.retrySleep)
 			time.Sleep(d.retrySleep)
 		} else {
-			logrus.Infof("%s %s retry count: %d, don't sleep.", req.Method, req.URL, retry)
+			logrus.Infof("%s %s retry count: %d, don't sleep.", req.HttpRequest.Method, req.HttpRequest.URL,
+				retry)
 		}
 	}
 	if retry > d.retry {
-		logrus.Errorf("%s %s is retry max", request.Method, request.URL)
+		logrus.Errorf("%s %s is retry max", req.HttpRequest.Method, req.HttpRequest.URL)
 		return
 	}
 	for _, middleWare := range d.middleWares {
@@ -149,7 +153,7 @@ func (d *Downloader) download(req *http.Request) {
 		if err != nil {
 			if !errors.Is(err, IgnoreResponse) {
 				logrus.Errorf("%s %s in download middleware(%+v) is err: %v",
-					req.Method, middleWare, req.URL, err)
+					req.HttpRequest.Method, middleWare, req.HttpRequest.URL, err)
 			}
 			return
 		}
@@ -158,4 +162,5 @@ func (d *Downloader) download(req *http.Request) {
 			return
 		}
 	}
+	d.responses <- resp
 }

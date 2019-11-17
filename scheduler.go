@@ -4,14 +4,13 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	mapset "github.com/deckarep/golang-set"
-	"net/http"
 )
 
 type Scheduler interface {
-	AddRequest(r *http.Request)
-	AddResponse(r *http.Response)
-	NextRequest() *http.Request
-	NextResponse() *http.Response
+	AddRequest(r *Request)
+	AddResponse(r *Response)
+	NextRequest() *Request
+	NextResponse() *Response
 }
 
 type SchedulerConfig struct {
@@ -20,8 +19,8 @@ type SchedulerConfig struct {
 }
 
 type DupeFilterScheduler struct {
-	reqQueue       chan *http.Request
-	respQueue      chan *http.Response
+	reqQueue       chan *Request
+	respQueue      chan *Response
 	reqFingerPrint mapset.Set
 }
 
@@ -37,16 +36,17 @@ func NewDupeFilterScheduler(config *SchedulerConfig) *DupeFilterScheduler {
 	if 0 == respQueueLen {
 		respQueueLen = 1
 	}
-	scheduler.reqQueue = make(chan *http.Request, reqQueueLen)
-	scheduler.respQueue = make(chan *http.Response, respQueueLen)
+	scheduler.reqQueue = make(chan *Request, reqQueueLen)
+	scheduler.respQueue = make(chan *Response, respQueueLen)
 	return scheduler
 }
 
-func (d *DupeFilterScheduler) requestFingerPrint(r *http.Request) string {
+func (d *DupeFilterScheduler) requestFingerPrint(r *Request) string {
+	req := r.HttpRequest
 	sha1obj := sha1.New()
-	sha1obj.Write([]byte(r.Method))
-	sha1obj.Write([]byte(r.URL.String()))
-	header := map[string][]string(r.Header)
+	sha1obj.Write([]byte(req.Method))
+	sha1obj.Write([]byte(req.URL.String()))
+	header := map[string][]string(req.Header)
 	for key, values := range header {
 		sha1obj.Write([]byte(key))
 		for _, value := range values {
@@ -56,7 +56,7 @@ func (d *DupeFilterScheduler) requestFingerPrint(r *http.Request) string {
 	return hex.EncodeToString(sha1obj.Sum([]byte(nil)))
 }
 
-func (d *DupeFilterScheduler) AddRequest(r *http.Request) {
+func (d *DupeFilterScheduler) AddRequest(r *Request) {
 	fingerPrint := d.requestFingerPrint(r)
 	if !d.reqFingerPrint.Contains(fingerPrint) {
 		d.reqQueue <- r
@@ -64,14 +64,14 @@ func (d *DupeFilterScheduler) AddRequest(r *http.Request) {
 	}
 }
 
-func (d *DupeFilterScheduler) AddResponse(r *http.Response) {
+func (d *DupeFilterScheduler) AddResponse(r *Response) {
 	d.respQueue <- r
 }
 
-func (d *DupeFilterScheduler) NextRequest() *http.Request {
+func (d *DupeFilterScheduler) NextRequest() *Request {
 	return <-d.reqQueue
 }
 
-func (d *DupeFilterScheduler) NextResponse() *http.Response {
+func (d *DupeFilterScheduler) NextResponse() *Response {
 	return <-d.respQueue
 }

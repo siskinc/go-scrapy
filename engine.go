@@ -2,7 +2,7 @@ package go_scrapy
 
 import (
 	"errors"
-	"net/http"
+	"github.com/sirupsen/logrus"
 )
 
 type EngineConfig struct {
@@ -10,23 +10,30 @@ type EngineConfig struct {
 }
 
 type Engine struct {
-	downloader *Downloader
-	scheduler  Scheduler
-	spider     Spider
-	pipelines  []ItemPipeline
+	downloader   *Downloader
+	scheduler    Scheduler
+	spider       Spider
+	pipelines    []ItemPipeline
+	StartUrlList []*Request
+	KeepRun      chan struct{}
 }
 
 func NewEngine(config *EngineConfig) *Engine {
 	engine := &Engine{}
 	engine.downloader = NewDownloader(config.DownloaderConfig)
+	schedulerConfig := &SchedulerConfig{
+		ReqQueueLen:  config.DownloaderConfig.RequestNumber,
+		RespQueueLen: config.DownloaderConfig.RequestNumber,
+	}
+	engine.scheduler = NewDupeFilterScheduler(schedulerConfig)
 	return engine
 }
 
-func (e *Engine) AddRequest(r *http.Request) {
+func (e *Engine) AddRequest(r *Request) {
 	e.scheduler.AddRequest(r)
 }
 
-func (e *Engine) AddResponse(r *http.Response) {
+func (e *Engine) AddResponse(r *Response) {
 	e.scheduler.AddResponse(r)
 }
 
@@ -50,6 +57,12 @@ func (e *Engine) RegisterPipeline(pipelines ...ItemPipeline) {
 }
 
 func (e *Engine) Start() {
+	if e.spider == nil {
+		logrus.Fatalf("spider not register!")
+	}
+	for i := range e.StartUrlList {
+		e.AddRequest(e.StartUrlList[i])
+	}
 	go e.downloader.run()
 	go func() {
 		for {
@@ -63,4 +76,11 @@ func (e *Engine) Start() {
 			e.spider.Parse(e, resp)
 		}
 	}()
+	go func() {
+		for {
+			resp := e.downloader.GetResponse()
+			e.scheduler.AddResponse(resp)
+		}
+	}()
+	<-e.KeepRun
 }
