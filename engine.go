@@ -3,6 +3,7 @@ package go_scrapy
 import (
 	"errors"
 	"github.com/sirupsen/logrus"
+	"time"
 )
 
 type EngineConfig struct {
@@ -67,19 +68,27 @@ func (e *Engine) Start() {
 	go func() {
 		for {
 			req := e.scheduler.NextRequest()
+			logrus.Debugf("get request from scheduler to downloader, url: %s, method: %s", req.HttpRequest.URL, req.HttpRequest.Method)
 			e.downloader.AddRequest(req)
+			time.Sleep(time.Nanosecond)
 		}
 	}()
 	go func() {
 		for {
 			resp := e.scheduler.NextResponse()
-			e.spider.Parse(e, resp)
+			logrus.Debugf("get response from scheduler to spider, url: %s, method: %s", resp.HttpResponse.Request.URL,
+				resp.HttpResponse.Request.Method)
+			go e.spider.Parse(e, resp)
+			time.Sleep(time.Nanosecond)
 		}
 	}()
 	go func() {
 		for {
 			resp := e.downloader.GetResponse()
+			logrus.Debugf("get response from downloader to scheduler, url: %s, method: %s", resp.HttpResponse.Request.URL,
+				resp.HttpResponse.Request.Method)
 			e.scheduler.AddResponse(resp)
+			time.Sleep(time.Nanosecond)
 		}
 	}()
 	<-e.KeepRun

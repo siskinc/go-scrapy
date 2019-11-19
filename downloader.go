@@ -71,11 +71,7 @@ func (d *Downloader) GetResponse() *Response {
 func (d *Downloader) run() {
 	for req := range d.requests {
 		d.runWorkLimit <- struct{}{}
-		beginTime := time.Now().Unix()
 		go d.download(req)
-		endTime := time.Now().Unix()
-		logrus.Debugf("Download %s %s is successful, time cost: %d", req.HttpRequest.Method, req.HttpRequest.URL,
-			endTime-beginTime)
 	}
 }
 
@@ -124,16 +120,20 @@ func (d *Downloader) download(req *Request) {
 		if retry > 1 {
 			logrus.Debugf("%s %s retry count: %d.", req.HttpRequest.Method, req.HttpRequest.URL, retry)
 		}
+		logrus.Debugf("request url: %s, method: %s, body: %v", req.HttpRequest.URL, req.HttpRequest.Method, req.HttpRequest.Body)
 		resp.HttpResponse, err = d.client.Do(req.HttpRequest)
 		if err != nil {
 			logrus.Errorf("%s %s is err: %v.", req.HttpRequest.Method, req.HttpRequest.URL, err)
+			goto CONTINUE
 		}
 		if resp.HttpResponse.StatusCode >= 400 {
 			logrus.Errorf("%s %s is failed, status code is: %d.", req.HttpRequest.Method, req.HttpRequest.URL,
 				resp.HttpResponse.StatusCode)
+			goto CONTINUE
 		} else {
 			break
 		}
+	CONTINUE:
 		retry++
 		if d.retrySleep > 0 {
 			logrus.Infof("%s %s retry count: %d, sleep: %v.", req.HttpRequest.Method, req.HttpRequest.URL,
