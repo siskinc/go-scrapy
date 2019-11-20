@@ -6,6 +6,8 @@ require (
 	github.com/PuerkitoBio/goquery v1.5.0
 	github.com/andybalholm/cascadia v1.1.0 // indirect
 	github.com/deckarep/golang-set v1.7.1
+	github.com/go-sql-driver/mysql v1.4.1
 	github.com/sirupsen/logrus v1.4.2
 	golang.org/x/net v0.0.0-20191116160921-f9c825593386 // indirect
+	google.golang.org/appengine v1.6.5 // indirect
 )
