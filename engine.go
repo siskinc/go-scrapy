@@ -11,7 +11,7 @@ type EngineConfig struct {
 }
 
 type Engine struct {
-	downloader   *Downloader
+	Downloader   *Downloader
 	scheduler    Scheduler
 	spider       Spider
 	pipelines    []ItemPipeline
@@ -21,7 +21,7 @@ type Engine struct {
 
 func NewEngine(config *EngineConfig) *Engine {
 	engine := &Engine{}
-	engine.downloader = NewDownloader(config.DownloaderConfig)
+	engine.Downloader = NewDownloader(config.DownloaderConfig)
 	schedulerConfig := &SchedulerConfig{
 		ReqQueueLen:  config.DownloaderConfig.RequestNumber,
 		RespQueueLen: config.DownloaderConfig.RequestNumber,
@@ -64,12 +64,12 @@ func (e *Engine) Start() {
 	for i := range e.StartUrlList {
 		e.AddRequest(e.StartUrlList[i])
 	}
-	go e.downloader.run()
+	go e.Downloader.run()
 	go func() {
 		for {
 			req := e.scheduler.NextRequest()
-			logrus.Debugf("get request from scheduler to downloader, url: %s, method: %s", req.HttpRequest.URL, req.HttpRequest.Method)
-			e.downloader.AddRequest(req)
+			logrus.Debugf("get request from scheduler to Downloader, url: %s, method: %s", req.HttpRequest.URL, req.HttpRequest.Method)
+			e.Downloader.AddRequest(req)
 			time.Sleep(time.Nanosecond)
 		}
 	}()
@@ -84,8 +84,8 @@ func (e *Engine) Start() {
 	}()
 	go func() {
 		for {
-			resp := e.downloader.GetResponse()
-			logrus.Debugf("get response from downloader to scheduler, url: %s, method: %s", resp.HttpResponse.Request.URL,
+			resp := e.Downloader.GetResponse()
+			logrus.Debugf("get response from Downloader to scheduler, url: %s, method: %s", resp.HttpResponse.Request.URL,
 				resp.HttpResponse.Request.Method)
 			e.scheduler.AddResponse(resp)
 			time.Sleep(time.Nanosecond)
