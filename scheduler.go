@@ -22,6 +22,7 @@ type DupeFilterScheduler struct {
 	reqQueue       chan *Request
 	respQueue      chan *Response
 	reqFingerPrint mapset.Set
+	NeedFilter     bool
 }
 
 func NewDupeFilterScheduler(config *SchedulerConfig) *DupeFilterScheduler {
@@ -42,6 +43,9 @@ func NewDupeFilterScheduler(config *SchedulerConfig) *DupeFilterScheduler {
 }
 
 func (d *DupeFilterScheduler) requestFingerPrint(r *Request) string {
+	if !d.NeedFilter {
+		return ""
+	}
 	req := r.HttpRequest
 	sha1obj := sha1.New()
 	sha1obj.Write([]byte(req.Method))
@@ -58,10 +62,11 @@ func (d *DupeFilterScheduler) requestFingerPrint(r *Request) string {
 
 func (d *DupeFilterScheduler) AddRequest(r *Request) {
 	fingerPrint := d.requestFingerPrint(r)
-	if !d.reqFingerPrint.Contains(fingerPrint) {
-		d.reqQueue <- r
-		d.reqFingerPrint.Add(fingerPrint)
+	if !d.NeedFilter || (d.NeedFilter && !d.reqFingerPrint.Contains(fingerPrint)) {
+		return
 	}
+	d.reqQueue <- r
+	d.reqFingerPrint.Add(fingerPrint)
 }
 
 func (d *DupeFilterScheduler) AddResponse(r *Response) {
