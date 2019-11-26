@@ -63,10 +63,10 @@ func (d *DupeFilterScheduler) requestFingerPrint(r *Request) string {
 func (d *DupeFilterScheduler) AddRequest(r *Request) {
 	fingerPrint := d.requestFingerPrint(r)
 	if !d.NeedFilter || (d.NeedFilter && !d.reqFingerPrint.Contains(fingerPrint)) {
+		d.reqQueue <- r
+		d.reqFingerPrint.Add(fingerPrint)
 		return
 	}
-	d.reqQueue <- r
-	d.reqFingerPrint.Add(fingerPrint)
 }
 
 func (d *DupeFilterScheduler) AddResponse(r *Response) {
