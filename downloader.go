@@ -92,30 +92,11 @@ func (d *Downloader) HandleMiddleWare(req *Request, resp *Response) (skip bool) 
 	return
 }
 
-func (d *Downloader) download(req *Request) {
+func (d *Downloader) DownloadOne(req *Request) *Response {
 	retry := 0
-	defer func() {
-		<-d.runWorkLimit
-	}()
-	var request *Request
-	var response *Response
-	var err error
-	for _, middleWare := range d.middleWares {
-		request, response, err = middleWare.ProcessRequest(req)
-		if err != nil {
-			if !errors.Is(err, IgnoreRequest) {
-				logrus.Errorf("%s %s in download middleware(%+v) is err: %v.",
-					req.HttpRequest.Method, middleWare, req.HttpRequest.URL, err)
-			}
-			return
-		}
-		if d.HandleMiddleWare(request, response) {
-			logrus.Debugf("break in middleware: %v.", middleWare)
-			return
-		}
-	}
 	resp := &Response{}
 	resp.Config = req.Config
+	var err error
 	for retry <= d.retry {
 		if retry > 1 {
 			logrus.Debugf("%s %s retry count: %d.", req.HttpRequest.Method, req.HttpRequest.URL, retry)
@@ -146,8 +127,33 @@ func (d *Downloader) download(req *Request) {
 	}
 	if retry > d.retry {
 		logrus.Errorf("%s %s is retry max", req.HttpRequest.Method, req.HttpRequest.URL)
-		return
+		return nil
 	}
+	return resp
+}
+
+func (d *Downloader) download(req *Request) {
+	defer func() {
+		<-d.runWorkLimit
+	}()
+	var request *Request
+	var response *Response
+	var err error
+	for _, middleWare := range d.middleWares {
+		request, response, err = middleWare.ProcessRequest(req)
+		if err != nil {
+			if !errors.Is(err, IgnoreRequest) {
+				logrus.Errorf("%s %s in download middleware(%+v) is err: %v.",
+					req.HttpRequest.Method, middleWare, req.HttpRequest.URL, err)
+			}
+			return
+		}
+		if d.HandleMiddleWare(request, response) {
+			logrus.Debugf("break in middleware: %v.", middleWare)
+			return
+		}
+	}
+	resp := d.DownloadOne(req)
 	for _, middleWare := range d.middleWares {
 		request, response, err = middleWare.ProcessResponse(resp)
 		if err != nil {
