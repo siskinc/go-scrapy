@@ -10,6 +10,8 @@ import (
 type EngineConfig struct {
 	DownloaderConfig *DownloaderConfig
 	MaxParseWorker   int
+	IdleInternal     time.Duration
+	IdleHandle       func(*Engine, Spider)
 }
 
 type Engine struct {
@@ -21,6 +23,8 @@ type Engine struct {
 	KeepRun        chan struct{}
 	respCache      chan *Response
 	maxParseWorker int
+	idleHandle     func(*Engine, Spider)
+	idleInternal   time.Duration
 }
 
 func ParseWorker(e *Engine, workID int) {
@@ -87,30 +91,32 @@ func (e *Engine) Start() {
 		go ParseWorker(e, i+1)
 	}
 	go e.Downloader.run()
-	go func() {
-		for {
-			req := e.Scheduler.NextRequest()
+	t := time.NewTimer(e.idleInternal)
+	for {
+		select {
+		case req := <-e.Scheduler.NextRequest():
 			logrus.Debugf("get request from Scheduler to Downloader, url: %s, method: %s", req.HttpRequest.URL, req.HttpRequest.Method)
 			e.Downloader.AddRequest(req)
 			time.Sleep(time.Nanosecond)
-		}
-	}()
-	go func() {
-		for {
-			resp := e.Scheduler.NextResponse()
+			t.Reset(e.idleInternal)
+		case resp := <-e.Scheduler.NextResponse():
 			logrus.Debugf("get response from Scheduler to spider, url: %s, method: %s", resp.HttpResponse.Request.URL,
 				resp.HttpResponse.Request.Method)
 			e.respCache <- resp
-		}
-	}()
-	go func() {
-		for {
-			resp := e.Downloader.GetResponse()
+			time.Sleep(time.Nanosecond)
+			t.Reset(e.idleInternal)
+		case resp := <-e.Downloader.GetResponse():
 			logrus.Debugf("get response from Downloader to Scheduler, url: %s, method: %s", resp.HttpResponse.Request.URL,
 				resp.HttpResponse.Request.Method)
 			e.Scheduler.AddResponse(resp)
 			time.Sleep(time.Nanosecond)
+			t.Reset(e.idleInternal)
+		case <-t.C:
+			e.idleHandle(e, e.spider)
+			time.Sleep(time.Nanosecond)
+			t.Reset(e.idleInternal)
+		case <-e.KeepRun:
+			return
 		}
-	}()
-	<-e.KeepRun
+	}
 }

@@ -68,8 +68,8 @@ func (d *Downloader) SetClient(client *http.Client) {
 	d.client = client
 }
 
-func (d *Downloader) GetResponse() *Response {
-	return <-d.responses
+func (d *Downloader) GetResponse() <-chan *Response {
+	return d.responses
 }
 
 func (d *Downloader) run() {

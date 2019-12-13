@@ -10,8 +10,8 @@ import (
 type Scheduler interface {
 	AddRequest(r *Request)
 	AddResponse(r *Response)
-	NextRequest() *Request
-	NextResponse() *Response
+	NextRequest() <-chan *Request
+	NextResponse() <-chan *Response
 }
 
 type SchedulerConfig struct {
@@ -75,10 +75,10 @@ func (d *DupeFilterScheduler) AddResponse(r *Response) {
 	d.respQueue <- r
 }
 
-func (d *DupeFilterScheduler) NextRequest() *Request {
-	return <-d.reqQueue
+func (d *DupeFilterScheduler) NextRequest() <-chan *Request {
+	return d.reqQueue
 }
 
-func (d *DupeFilterScheduler) NextResponse() *Response {
-	return <-d.respQueue
+func (d *DupeFilterScheduler) NextResponse() <-chan *Response {
+	return d.respQueue
 }
