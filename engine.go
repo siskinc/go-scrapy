@@ -29,7 +29,7 @@ type Engine struct {
 
 func ParseWorker(e *Engine, workID int) {
 	for resp := range e.respCache {
-		logrus.Debug("work id: %d, parse %s", workID, resp.HttpResponse.Request.URL.String())
+		logrus.Debugf("work id: %d, parse %s", workID, resp.HttpResponse.Request.URL.String())
 		if resp.Parse != nil {
 			resp.Parse(e, resp)
 		} else {
