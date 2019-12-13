@@ -48,6 +48,7 @@ func NewEngine(config *EngineConfig) *Engine {
 	if config.MaxParseWorker == 0 {
 		config.MaxParseWorker = 10
 	}
+	engine.respCache = make(chan *Response, config.DownloaderConfig.RequestNumber)
 	engine.maxParseWorker = config.MaxParseWorker
 	engine.Scheduler = NewDupeFilterScheduler(schedulerConfig)
 	engine.idleInternal = config.IdleInternal
