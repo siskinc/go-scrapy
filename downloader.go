@@ -2,9 +2,10 @@ package go_scrapy
 
 import (
 	"errors"
-	"github.com/sirupsen/logrus"
 	"net/http"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 type DownloadMiddleWare interface {
@@ -95,7 +96,8 @@ func (d *Downloader) HandleMiddleWare(req *Request, resp *Response) (skip bool) 
 func (d *Downloader) DownloadOne(req *Request) *Response {
 	retry := 0
 	resp := &Response{}
-	resp.Config = req.Config
+	resp.CustomerConfig = req.CustomerConfig
+	resp.Parse = req.Parse
 	var err error
 	for retry <= d.retry {
 		if retry > 1 {

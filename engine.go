@@ -2,21 +2,36 @@ package go_scrapy
 
 import (
 	"errors"
-	"github.com/sirupsen/logrus"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 type EngineConfig struct {
 	DownloaderConfig *DownloaderConfig
+	MaxParseWorker   int
 }
 
 type Engine struct {
-	Downloader   *Downloader
-	scheduler    Scheduler
-	spider       Spider
-	pipelines    []ItemPipeline
-	StartUrlList []*Request
-	KeepRun      chan struct{}
+	Downloader     *Downloader
+	Scheduler      Scheduler
+	spider         Spider
+	pipelines      []ItemPipeline
+	StartUrlList   []*Request
+	KeepRun        chan struct{}
+	respCache      chan *Response
+	maxParseWorker int
+}
+
+func ParseWorker(e *Engine, workID int) {
+	for resp := range e.respCache {
+		logrus.Debug("work id: %d, parse %s", workID, resp.HttpResponse.Request.URL.String())
+		if resp.Parse != nil {
+			resp.Parse(e, resp)
+		} else {
+			e.spider.Parse(e, resp)
+		}
+	}
 }
 
 func NewEngine(config *EngineConfig) *Engine {
@@ -26,16 +41,20 @@ func NewEngine(config *EngineConfig) *Engine {
 		ReqQueueLen:  config.DownloaderConfig.RequestNumber,
 		RespQueueLen: config.DownloaderConfig.RequestNumber,
 	}
-	engine.scheduler = NewDupeFilterScheduler(schedulerConfig)
+	if config.MaxParseWorker == 0 {
+		config.MaxParseWorker = 10
+	}
+	engine.maxParseWorker = config.MaxParseWorker
+	engine.Scheduler = NewDupeFilterScheduler(schedulerConfig)
 	return engine
 }
 
 func (e *Engine) AddRequest(r *Request) {
-	e.scheduler.AddRequest(r)
+	e.Scheduler.AddRequest(r)
 }
 
 func (e *Engine) AddResponse(r *Response) {
-	e.scheduler.AddResponse(r)
+	e.Scheduler.AddResponse(r)
 }
 
 func (e *Engine) AddItem(item interface{}) {
@@ -64,30 +83,32 @@ func (e *Engine) Start() {
 	for i := range e.StartUrlList {
 		e.AddRequest(e.StartUrlList[i])
 	}
+	for i := 0; i < e.maxParseWorker; i++ {
+		go ParseWorker(e, i+1)
+	}
 	go e.Downloader.run()
 	go func() {
 		for {
-			req := e.scheduler.NextRequest()
-			logrus.Debugf("get request from scheduler to Downloader, url: %s, method: %s", req.HttpRequest.URL, req.HttpRequest.Method)
+			req := e.Scheduler.NextRequest()
+			logrus.Debugf("get request from Scheduler to Downloader, url: %s, method: %s", req.HttpRequest.URL, req.HttpRequest.Method)
 			e.Downloader.AddRequest(req)
 			time.Sleep(time.Nanosecond)
 		}
 	}()
 	go func() {
 		for {
-			resp := e.scheduler.NextResponse()
-			logrus.Debugf("get response from scheduler to spider, url: %s, method: %s", resp.HttpResponse.Request.URL,
+			resp := e.Scheduler.NextResponse()
+			logrus.Debugf("get response from Scheduler to spider, url: %s, method: %s", resp.HttpResponse.Request.URL,
 				resp.HttpResponse.Request.Method)
-			go e.spider.Parse(e, resp)
-			time.Sleep(time.Nanosecond)
+			e.respCache <- resp
 		}
 	}()
 	go func() {
 		for {
 			resp := e.Downloader.GetResponse()
-			logrus.Debugf("get response from Downloader to scheduler, url: %s, method: %s", resp.HttpResponse.Request.URL,
+			logrus.Debugf("get response from Downloader to Scheduler, url: %s, method: %s", resp.HttpResponse.Request.URL,
 				resp.HttpResponse.Request.Method)
-			e.scheduler.AddResponse(resp)
+			e.Scheduler.AddResponse(resp)
 			time.Sleep(time.Nanosecond)
 		}
 	}()

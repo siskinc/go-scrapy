@@ -3,6 +3,7 @@ package go_scrapy
 import (
 	"crypto/sha1"
 	"encoding/hex"
+
 	mapset "github.com/deckarep/golang-set"
 )
 
@@ -16,6 +17,7 @@ type Scheduler interface {
 type SchedulerConfig struct {
 	ReqQueueLen  int
 	RespQueueLen int
+	NeedFilter   bool
 }
 
 type DupeFilterScheduler struct {
