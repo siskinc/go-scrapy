@@ -26,7 +26,7 @@ type Downloader struct {
 	client          *http.Client
 	requests        chan *Request
 	responses       chan *Response
-	runWorkLimit    chan struct{}
+	workerNumber    int
 	retry           int
 	retrySleep      time.Duration
 	middleWares     []DownloadMiddleWare
@@ -55,7 +55,7 @@ func NewDownloader(config *DownloaderConfig) *Downloader {
 	downloader.requestInternal = config.RequestInternal
 	downloader.requests = make(chan *Request, config.RequestNumber)
 	downloader.responses = make(chan *Response, config.ResponseNumber)
-	downloader.runWorkLimit = make(chan struct{}, config.WorkerNumber)
+	downloader.workerNumber = config.WorkerNumber
 	downloader.client = http.DefaultClient
 	return downloader
 }
@@ -73,9 +73,8 @@ func (d *Downloader) GetResponse() <-chan *Response {
 }
 
 func (d *Downloader) run() {
-	for req := range d.requests {
-		d.runWorkLimit <- struct{}{}
-		go d.download(req)
+	for i := 0; i < d.workerNumber; i++ {
+		go d.downloadWorker(i + 1)
 	}
 }
 
@@ -137,42 +136,41 @@ func (d *Downloader) DownloadOne(req *Request) *Response {
 	return resp
 }
 
-func (d *Downloader) download(req *Request) {
-	defer func() {
-		<-d.runWorkLimit
-	}()
-	var request *Request
-	var response *Response
-	var err error
-	for _, middleWare := range d.middleWares {
-		request, response, err = middleWare.ProcessRequest(req)
-		if err != nil {
-			if !errors.Is(err, IgnoreRequest) {
-				logrus.Errorf("%s %s in download middleware(%+v) is err: %v.",
-					req.HttpRequest.Method, middleWare, req.HttpRequest.URL, err)
+func (d *Downloader) downloadWorker(workID int) {
+	for req := range d.requests {
+		var request *Request
+		var response *Response
+		var err error
+		for _, middleWare := range d.middleWares {
+			request, response, err = middleWare.ProcessRequest(req)
+			if err != nil {
+				if !errors.Is(err, IgnoreRequest) {
+					logrus.Errorf("%s %s in download middleware(%+v) is err: %v, worker id: %d.",
+						req.HttpRequest.Method, middleWare, req.HttpRequest.URL, err, workID)
+				}
+				return
 			}
-			return
-		}
-		if d.HandleMiddleWare(request, response) {
-			logrus.Debugf("break in middleware: %v.", middleWare)
-			return
-		}
-	}
-	resp := d.DownloadOne(req)
-	for _, middleWare := range d.middleWares {
-		request, response, err = middleWare.ProcessResponse(resp)
-		if err != nil {
-			if !errors.Is(err, IgnoreResponse) {
-				logrus.Errorf("%s %s in download middleware(%+v) is err: %v",
-					req.HttpRequest.Method, middleWare, req.HttpRequest.URL, err)
+			if d.HandleMiddleWare(request, response) {
+				logrus.Debugf("break in middleware: %v, worker id: %d.", middleWare, workID)
+				return
 			}
-			return
 		}
-		if d.HandleMiddleWare(request, response) {
-			logrus.Debugf("break in middleware: %v", middleWare)
-			return
+		resp := d.DownloadOne(req)
+		for _, middleWare := range d.middleWares {
+			request, response, err = middleWare.ProcessResponse(resp)
+			if err != nil {
+				if !errors.Is(err, IgnoreResponse) {
+					logrus.Errorf("%s %s in download middleware(%+v) is err: %v, worker id: %d",
+						req.HttpRequest.Method, middleWare, req.HttpRequest.URL, err, workID)
+				}
+				return
+			}
+			if d.HandleMiddleWare(request, response) {
+				logrus.Debugf("break in middleware: %v, worker id: %d", middleWare, workID)
+				return
+			}
 		}
+		d.responses <- resp
+		time.Sleep(d.requestInternal)
 	}
-	time.Sleep(d.requestInternal)
-	d.responses <- resp
 }
