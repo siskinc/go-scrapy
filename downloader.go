@@ -14,21 +14,23 @@ type DownloadMiddleWare interface {
 }
 
 type DownloaderConfig struct {
-	RetryMax       int
-	RetrySleep     time.Duration
-	WorkerNumber   int
-	RequestNumber  int
-	ResponseNumber int
+	RetryMax        int
+	RetrySleep      time.Duration
+	WorkerNumber    int
+	RequestNumber   int
+	ResponseNumber  int
+	RequestInternal time.Duration
 }
 
 type Downloader struct {
-	client       *http.Client
-	requests     chan *Request
-	responses    chan *Response
-	runWorkLimit chan struct{}
-	retry        int
-	retrySleep   time.Duration
-	middleWares  []DownloadMiddleWare
+	client          *http.Client
+	requests        chan *Request
+	responses       chan *Response
+	runWorkLimit    chan struct{}
+	retry           int
+	retrySleep      time.Duration
+	middleWares     []DownloadMiddleWare
+	requestInternal time.Duration
 }
 
 var (
@@ -50,6 +52,7 @@ func NewDownloader(config *DownloaderConfig) *Downloader {
 	if config.ResponseNumber == 0 {
 		config.ResponseNumber = config.WorkerNumber
 	}
+	downloader.requestInternal = config.RequestInternal
 	downloader.requests = make(chan *Request, config.RequestNumber)
 	downloader.responses = make(chan *Response, config.ResponseNumber)
 	downloader.runWorkLimit = make(chan struct{}, config.WorkerNumber)
@@ -170,5 +173,6 @@ func (d *Downloader) download(req *Request) {
 			return
 		}
 	}
+	time.Sleep(d.requestInternal)
 	d.responses <- resp
 }
