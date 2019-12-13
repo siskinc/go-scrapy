@@ -50,6 +50,8 @@ func NewEngine(config *EngineConfig) *Engine {
 	}
 	engine.maxParseWorker = config.MaxParseWorker
 	engine.Scheduler = NewDupeFilterScheduler(schedulerConfig)
+	engine.idleInternal = config.IdleInternal
+	engine.idleHandle = config.IdleHandle
 	return engine
 }
 
@@ -112,7 +114,9 @@ func (e *Engine) Start() {
 			time.Sleep(time.Nanosecond)
 			t.Reset(e.idleInternal)
 		case <-t.C:
-			e.idleHandle(e, e.spider)
+			if e.idleHandle != nil {
+				e.idleHandle(e, e.spider)
+			}
 			time.Sleep(time.Nanosecond)
 			t.Reset(e.idleInternal)
 		case <-e.KeepRun:
