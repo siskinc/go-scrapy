@@ -94,32 +94,28 @@ func (e *Engine) Start() {
 		go ParseWorker(e, i+1)
 	}
 	go e.Downloader.run()
-	t := time.NewTimer(e.idleInternal)
+	t := time.NewTicker(e.idleInternal)
 	for {
 		select {
 		case req := <-e.Scheduler.NextRequest():
 			logrus.Debugf("get request from Scheduler to Downloader, url: %s, method: %s", req.HttpRequest.URL, req.HttpRequest.Method)
 			e.Downloader.AddRequest(req)
 			time.Sleep(time.Nanosecond)
-			t.Reset(e.idleInternal)
 		case resp := <-e.Scheduler.NextResponse():
 			logrus.Debugf("get response from Scheduler to spider, url: %s, method: %s", resp.HttpResponse.Request.URL,
 				resp.HttpResponse.Request.Method)
 			e.respCache <- resp
 			time.Sleep(time.Nanosecond)
-			t.Reset(e.idleInternal)
 		case resp := <-e.Downloader.GetResponse():
 			logrus.Debugf("get response from Downloader to Scheduler, url: %s, method: %s", resp.HttpResponse.Request.URL,
 				resp.HttpResponse.Request.Method)
 			e.Scheduler.AddResponse(resp)
 			time.Sleep(time.Nanosecond)
-			t.Reset(e.idleInternal)
 		case <-t.C:
 			if e.idleHandle != nil {
 				e.idleHandle(e, e.spider)
 			}
 			time.Sleep(time.Nanosecond)
-			t.Reset(e.idleInternal)
 		case <-e.KeepRun:
 			return
 		}
