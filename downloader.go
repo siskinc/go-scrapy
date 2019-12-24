@@ -156,6 +156,9 @@ func (d *Downloader) downloadWorker(workID int) {
 			}
 		}
 		resp := d.DownloadOne(req)
+		if resp == nil {
+			continue
+		}
 		for _, middleWare := range d.middleWares {
 			request, response, err = middleWare.ProcessResponse(resp)
 			if err != nil {
